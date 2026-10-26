@@ -32,8 +32,12 @@ jobs:
       - name: Collect site files
         run: |
           mkdir _site
-          cp -r index.html app.js imaging.js geometry.js design.js templates.js store.js styles.css catalog.json manifest.webmanifest robots.txt sitemap.xml fonts art icons _site/
+          cp -r index.html app.js imaging.js geometry.js design.js templates.js store.js ui-icons.js styles.css catalog.json manifest.webmanifest robots.txt sitemap.xml fonts art icons blanks _site/
           [ -f CNAME ] && cp CNAME _site/ || true
+          # stamp the app and styles with this commit, so browsers never mix an old cached file with new ones
+          v="${GITHUB_SHA::7}"
+          sed -i -e "s|src=\"app.js\"|src=\"app.js?v=$v\"|" -e "s|href=\"styles.css\"|href=\"styles.css?v=$v\"|" _site/index.html
+          grep -q "app.js?v=$v" _site/index.html && grep -q "styles.css?v=$v" _site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
       - id: deployment

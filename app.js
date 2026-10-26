@@ -37,29 +37,29 @@ const TEXT_STYLES = [
   ["Varsity", { font: "Graduate", color: "$a", outline: "$ink", outlineW: 3, outline2: "$b", outline2W: 2, warp: "arc", curve: 30, upper: true }],
   ["Script", { font: "Pacifico", color: "$a", shadow: "$b", shadowX: 5, shadowY: 5 }],
   ["Retro", { font: "Shrikhand", color: "$a", outline: "$b", outlineW: 3, warp: "wave", curve: 30 }],
-  ["Graffiti", { font: "Sedgwick Ave Display", color: "$a", outline: "$paper", outlineW: 4, outline2: "$b", outline2W: 3 }],
-  ["Comic", { font: "Bangers", color: "$a", outline: "$paper", outlineW: 4, shadow: "$b", shadowX: 6, shadowY: 6, upper: true }],
-  ["Neon", { font: "Monoton", color: "$b" }],
   ["Chrome", { font: "Rampart One", color: "$a", grad: "$c", gradAngle: 180, outline: "$paper", outlineW: 2 }],
-  ["Pixel", { font: "Press Start 2P", color: "$a", shadow: "$b", shadowX: 6, shadowY: 6 }],
-  ["Horror", { font: "Creepster", color: "$a" }],
-  ["Cute", { font: "Rubik Bubbles", color: "$a", outline: "$ink", outlineW: 3 }],
   ["Elegant", { font: "Playfair Display", spacing: 10 }],
   ["Stencil", { font: "Saira Stencil One", upper: true }],
   ["Circle badge", { font: "Russo One", warp: "circle", curve: 100, upper: true, value: "• your text here • your text here" }],
 ];
 
 async function start(cfg) {
-  const here = (u) => new URL(u, import.meta.url).href;
+  // modules and photos carry app.js's ?v= stamp, so a deploy never mixes old and new files
+  const here = (u) => { const x = new URL(u, import.meta.url); x.search = new URL(import.meta.url).search; return x.href; };
   const idPrefix = String(cfg.designIdPrefix || "ED").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 4) || "ED";
-  const [img, ds, geo, tplMod, storeMod, fontCat] = await Promise.all([
+  const [img, ds, geo, tplMod, storeMod, fontCat, { UI_ICONS }] = await Promise.all([
     import(cfg.imagingUrl ?? here("./imaging.js")),
     import(cfg.designUrl ?? here("./design.js")), // shapes, vector art and styled text
     cfg.geometryUrl ? import(cfg.geometryUrl) : null, // pattern maker
     cfg.templatesUrl === false ? null : import(cfg.templatesUrl ?? here("./templates.js")).catch(() => null), // Ideas tab
     import(cfg.saveUrl ?? here("./store.js")).catch(() => null), // saved designs in this browser
     cfg.fontsUrl ? fetch(cfg.fontsUrl).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null,
+    import(cfg.uiIconsUrl ?? here("./ui-icons.js")), // toolbar and tool rail icons
   ]);
+  // shirt photos: blanks.json lists each style's front and back photo and where the print area sits on it
+  const photoCfg = new URL(cfg.blanksUrl ?? here("./blanks/blanks.json"), location.href);
+  const photos = await fetch(photoCfg).then((r) => (r.ok ? r.json() : null));
+  if (!photos?.styles?.tee) throw new Error("shirt photos");
   const saves = storeMod?.openStore(idPrefix) ?? null;
   const store = (cfg.storeUrl || "").replace(/\/+$/, "");
   cfg.cartUrl ??= `${store}/cart`;
@@ -142,6 +142,7 @@ async function start(cfg) {
     s.append(p);
     return s;
   };
+  const uiIcon = (name) => { const e = svgEl([256, 256], UI_ICONS[name] ?? ""); e.classList.add("sb-ui"); return e; };
   // replaceChildren() would print a skipped (null) child as the word "null", so drop those first.
   const put = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
   const say = (msg, kind = "") => { status.textContent = msg; status.className = `sb-status ${kind}`; };
@@ -163,44 +164,92 @@ async function start(cfg) {
     h("button", { type: "button", role: "radio", class: "sb-pill", "aria-checked": String(k === current), onclick: () => on(k) }, name)));
 
   // ---------- layout ----------
+  // Laid out like a product editor: tool rail and tool panel on the left, the shirt in the middle, the selected
+  // layer's settings (or the order summary) on the right. On a phone the tools sit in a bar along the bottom and
+  // the open panel scrolls under the shirt.
   const status = h("p", { class: "sb-status", role: "status", "aria-live": "polite" });
   const notice = h("div", { class: "sb-notice", hidden: true });
-  const shirt = h("div", { class: "sb-shirt" });
+  // The shirt is a real photo: a color layer with the print on it, multiplied by the photo's shading,
+  // plus the photo shot in black (folds, highlights, the studio backdrop).
+  const tint = h("div", { class: "sb-tint" });
+  const printBox = h("div", { class: "sb-print" });
+  const shadeImg = h("img", { class: "sb-shade", alt: "", decoding: "async", draggable: "false" });
+  const baseImg = h("img", { class: "sb-base", alt: "", decoding: "async", draggable: "false" });
+  const photo = h("div", { class: "sb-photo", "aria-hidden": "true" }, tint, printBox, shadeImg, baseImg);
   const area = h("div", { class: "sb-area", tabindex: "0", "aria-label": "Print area. Arrow keys move the selected art." });
-  const stage = h("div", { class: "sb-stage" }, shirt, area);
+  const stage = h("div", { class: "sb-stage" }, photo, area);
   const sideBtns = h("div", { class: "sb-seg", role: "tablist", "aria-label": "Shirt side" });
-  const undoBtn = h("button", { type: "button", class: "btn ghost small", onclick: () => undo(), disabled: true }, "Undo");
-  const redoBtn = h("button", { type: "button", class: "btn ghost small", onclick: () => redo(), disabled: true }, "Redo");
-  const saveBtn = saves ? h("button", { type: "button", class: "btn ghost small", onclick: () => saveDesign() }, "Save") : null;
-  const guideChk = h("input", { type: "checkbox", checked: true, onchange: () => area.classList.toggle("no-guide", !guideChk.checked) });
+  const tbtn = (icon, label, onclick) => h("button", { type: "button", class: "sb-tbtn", title: label, "aria-label": label, onclick }, uiIcon(icon));
+  const undoBtn = tbtn("arrow-counter-clockwise", "Undo", () => undo());
+  const redoBtn = tbtn("arrow-clockwise", "Redo", () => redo());
+  undoBtn.disabled = redoBtn.disabled = true;
+  const saveBtn = saves ? h("button", { type: "button", class: "sb-tbtn wide", onclick: () => saveDesign() }, uiIcon("floppy-disk"), h("span", {}, "Save")) : null;
+  const guideChk = h("input", { type: "checkbox", checked: true, onchange: () => stage.classList.toggle("no-guide", !guideChk.checked) });
   const sizeLine = h("p", { class: "sb-size small" });
+  const orderPrice = h("span", { class: "sb-oprice" });
+  const orderBtn = h("button", { type: "button", class: "btn sb-orderbtn", onclick: () => showTab("Order") }, orderPrice, h("span", {}, "Order"));
 
-  const tabs = ["Shirt", ...(tplMod ? ["Ideas"] : []), "Text", "Art", "Upload", "Draw", "Layers", "Edit", "Order"];
-  const panels = Object.fromEntries(tabs.map((t) => [t, h("section", { class: "sb-panel", id: `sb-p-${t}`, role: "tabpanel", hidden: t !== "Shirt" })]));
-  const tabBar = h("div", { class: "sb-tabs", role: "tablist", style: `--sb-tabs:${tabs.length}` }, tabs.map((t, i) =>
-    h("button", { type: "button", role: "tab", "aria-selected": String(i === 0), "aria-controls": `sb-p-${t}`, onclick: () => showTab(t) }, t)));
-  const showTab = (t) => {
-    for (const [k, p] of Object.entries(panels)) p.hidden = k !== t;
-    for (const b of tabBar.children) b.setAttribute("aria-selected", String(b.textContent === t));
-    if (t === "Draw") { pen.on = true; if (window.matchMedia("(max-width: 900px)").matches) stage.scrollIntoView({ behavior: "smooth", block: "center" }); }
+  const TOOLS = ["Shirt", "Library", "Text", "Upload", "Art", ...(tplMod ? ["Ideas"] : []), "Draw", "Layers"];
+  const TOOL_INFO = { Shirt: ["t-shirt", "Product"], Library: ["images", "Designs"], Ideas: ["lightbulb", "Ideas"], Text: ["text-t", "Text"], Art: ["shapes", "Art"],
+    Upload: ["upload-simple", "Upload"], Draw: ["pencil-simple", "Draw"], Layers: ["stack", "Layers"] };
+  const panels = Object.fromEntries([...TOOLS, "Edit", "Order"].map((t) => [t, h("section", { class: "sb-panel", id: `sb-p-${t}`, role: "tabpanel", hidden: t !== "Shirt" })]));
+  const rail = h("nav", { class: "sb-rail", role: "tablist", "aria-label": "Tools" }, TOOLS.map((t) =>
+    h("button", { type: "button", role: "tab", "data-tool": t, "aria-selected": String(t === "Shirt"), "aria-controls": `sb-p-${t}`, onclick: () => showTab(t) },
+      uiIcon(TOOL_INFO[t][0]), h("span", {}, TOOL_INFO[t][1]))));
+  const phone = window.matchMedia("(max-width: 900px)");
+  const view = { tool: "Shirt", order: false, sel: undefined };
+  // which panels show: the tool panel on the left; Edit (something selected) or Order on the right. A phone shows one.
+  function layout() {
+    const sel = selLayer(), mobile = phone.matches;
+    if (mobile && sel) view.order = false;
+    const was = { edit: panels.Edit.hidden, order: panels.Order.hidden };
+    for (const t of TOOLS) panels[t].hidden = t !== view.tool || (mobile && (!!sel || view.order));
+    panels.Edit.hidden = !sel;
+    panels.Order.hidden = mobile ? !view.order : !!sel;
+    for (const b of rail.children) b.setAttribute("aria-selected", String(b.dataset.tool === view.tool && !(mobile && (sel || view.order))));
+    orderBtn.setAttribute("aria-pressed", String(!panels.Order.hidden));
+    root.classList.toggle("has-sel", !!sel);
+    if (!panels.Edit.hidden && (was.edit || view.sel !== S.sel)) drawEdit();
+    if (!panels.Order.hidden && was.order) drawOrder();
+    view.sel = S.sel;
     area.classList.toggle("is-drawing", drawing());
-    if (t === "Order") drawOrder();
+  }
+  phone.addEventListener("change", () => layout());
+  const showTab = (t) => {
+    if (TOOLS.includes(t)) {
+      view.tool = t; view.order = false;
+      if (phone.matches && S.sel) { S.sel = null; drawStage(); }
+    } else if (t === "Order") {
+      view.order = true;
+      if (S.sel) { S.sel = null; drawStage(); }
+    } else view.order = false; // "Edit": shows when something is selected
+    layout();
+    if (t === "Draw") { pen.on = true; if (phone.matches) stage.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    area.classList.toggle("is-drawing", drawing());
+    if (t === "Order") { drawOrder(); if (phone.matches) panels.Order.scrollIntoView({ behavior: "smooth", block: "start" }); }
     if (t === "Edit") drawEdit();
     if (t === "Art") drawArt();
+    if (t === "Library") drawLibraryTab();
     if (t === "Layers") drawLayers();
     if (t === "Ideas") drawIdeas();
     if (t === "Draw") drawDraw();
   };
 
-  put(root, h("div", { class: "wrap sb-wrap" },
-    h("header", { class: "sb-head" }, h("h1", { class: "page-title" }, cfg.heading || "Build your shirt"), cfg.note ? h("p", { class: "muted" }, cfg.note) : null),
-    h("div", { class: "sb-grid" },
-      h("div", { class: "sb-left" },
+  put(root, h("div", { class: "sb-app" },
+    h("h1", { class: "sb-sr" }, cfg.heading || "Build your shirt"),
+    h("div", { class: "sb-bar" },
+      h("div", { class: "sb-bar-l" }, undoBtn, redoBtn),
+      h("div", { class: "sb-bar-c" }, sideBtns),
+      h("div", { class: "sb-bar-r" }, saveBtn, orderBtn)),
+    h("div", { class: "sb-editor" },
+      rail,
+      h("div", { class: "sb-drawer" }, TOOLS.map((t) => panels[t])),
+      h("div", { class: "sb-canvas" },
         notice,
-        h("div", { class: "sb-toolbar" }, sideBtns, h("span", { class: "sb-spacer" }), undoBtn, redoBtn, saveBtn,
-          h("label", { class: "sb-check small" }, guideChk, " Print area")),
-        stage, sizeLine, status),
-      h("div", { class: "sb-right" }, tabBar, ...Object.values(panels)))));
+        stage,
+        h("div", { class: "sb-under" }, sizeLine, h("label", { class: "sb-check small" }, guideChk, " Show print area")),
+        status),
+      h("aside", { class: "sb-props", "aria-label": "Selected design and order" }, panels.Edit, panels.Order))));
 
   // ---------- shirt ----------
   const blank = () => blanks[S.blank];
@@ -211,14 +260,49 @@ async function start(cfg) {
   const hexFor = (name) => blank()?.colorHex?.[name] ?? colorHex[String(name ?? "").toLowerCase().trim()] ?? hashGray(name);
   const shirtDark = () => isDark(hexFor(S.color));
   const ink = () => (shirtDark() ? "#ffffff" : "#111111"); // default color for new text and art
-  const kit = (accent = "neon") => tplMod?.colorsFor(shirtDark(), accent) ?? { ink: ink(), paper: shirtDark() ? "#111111" : "#ffffff", a: ink(), b: ink(), c: ink(), dark: shirtDark() };
+  const kit = (accent = "varsity") => tplMod?.colorsFor(shirtDark(), accent) ?? { ink: ink(), paper: shirtDark() ? "#111111" : "#ffffff", a: ink(), b: ink(), c: ink(), dark: shirtDark() };
 
+  // ---------- shirt photo ----------
+  const styleOf = (b = blank()) => (photos.styles[photos.byType?.[b?.type ?? "tee"]] ? photos.byType[b?.type ?? "tee"] : "tee");
+  const viewOf = (side = S.side, b) => photos.styles[styleOf(b)][side] ?? photos.styles.tee[side];
+  const photoUrl = (side, kind, b) => { const u = new URL(`${styleOf(b)}-${side}${kind === "shade" ? "-shade" : ""}.jpg`, photoCfg); u.search = photoCfg.search; return u.href; };
+  const photoImgs = new Map();
+  const photoImg = (url) => {
+    if (!photoImgs.has(url)) photoImgs.set(url, new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => { photoImgs.delete(url); fail(new Error("photo")); }; i.src = url; }));
+    return photoImgs.get(url);
+  };
+  // the print area on the photo, as fractions of the photo's width: left, top, width (the height follows PW:PH)
+  const areaBox = (side = S.side, b) => { const v = viewOf(side, b); return { x: v.cx - (v.ppi * PW) / 2, y: v.top, w: v.ppi * PW }; };
   function drawShirt() {
     const fill = hexFor(S.color);
-    shirt.innerHTML = shirtSvg(fill, S.side);
-    stage.style.setProperty("--sb-ink", isDark(fill) ? "rgba(255,255,255,.55)" : "rgba(0,0,0,.35)");
+    tint.style.background = fill;
+    const base = photoUrl(S.side, "base"), shade = photoUrl(S.side, "shade");
+    // swap both photos together once they're loaded, so the shading never lands on the wrong shirt
+    Promise.all([photoImg(base), photoImg(shade)]).then(() => {
+      if (photoUrl(S.side, "base") !== base) return;
+      baseImg.src = base; shadeImg.src = shade; stage.classList.add("is-ready");
+    }).catch(() => say("The shirt photo didn't load. Check your connection and refresh.", "err"));
+    const a = areaBox();
+    for (const el of [printBox, area]) { el.style.left = `${a.x * 100}%`; el.style.top = `${a.y * 100}%`; el.style.width = `${a.w * 100}%`; }
+    stage.style.setProperty("--sb-ink", isDark(fill) ? "rgba(255,255,255,.6)" : "rgba(0,0,0,.4)");
     root.style.setProperty("--sb-shirt", fill);
     root.style.setProperty("--sb-on-shirt", isDark(fill) ? "#ffffff" : "#111111");
+    const other = S.side === "front" ? "back" : "front";
+    photoImg(photoUrl(other, "base")).catch(() => {}); photoImg(photoUrl(other, "shade")).catch(() => {});
+    orderPrice.textContent = variant() ? money.format(variant().price / 100) : "";
+  }
+  // the shirt photo in the chosen color with paint() drawn on it, px square; paint gets the print area's corner and px per inch
+  async function shirtPhoto(side, px, paint) {
+    const [base, shade] = await Promise.all([photoImg(photoUrl(side, "base")), photoImg(photoUrl(side, "shade"))]);
+    const c = document.createElement("canvas"); c.width = c.height = px;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = hexFor(S.color); ctx.fillRect(0, 0, px, px);
+    const a = areaBox(side);
+    await paint(ctx, a.x * px, a.y * px, (a.w * px) / PW);
+    ctx.globalCompositeOperation = "multiply"; ctx.drawImage(shade, 0, 0, px, px);
+    ctx.globalCompositeOperation = "lighter"; ctx.drawImage(base, 0, 0, px, px);
+    ctx.globalCompositeOperation = "source-over";
+    return c;
   }
 
   function drawShirtPanel() {
@@ -275,32 +359,41 @@ async function start(cfg) {
 
   function drawStage() {
     const scale = ppi();
-    area.style.aspectRatio = `${PW} / ${PH}`;
-    const els = shown(layers()).map((l) => {
-      const c = canvasFor(l);
-      const node = h("div", { class: `sb-layer${l.id === S.sel ? " sel" : ""}${l.locked ? " locked" : ""}`, "data-id": l.id });
-      node.style.cssText = `left:${(l.x - l.w / 2) * scale}px;top:${(l.y - l.h / 2) * scale}px;width:${l.w * scale}px;height:${l.h * scale}px;` +
-        `transform:rotate(${l.rot}deg) scale(${l.flipX ? -1 : 1},${l.flipY ? -1 : 1})`;
-      if (c) { c.classList.add("sb-bmp"); node.append(c); }
+    area.style.aspectRatio = printBox.style.aspectRatio = `${PW} / ${PH}`;
+    const at = (l) => `left:${(l.x - l.w / 2) * scale}px;top:${(l.y - l.h / 2) * scale}px;width:${l.w * scale}px;height:${l.h * scale}px;` +
+      `transform:rotate(${l.rot}deg) scale(${l.flipX ? -1 : 1},${l.flipY ? -1 : 1})`;
+    const inkEls = [], hits = [];
+    for (const l of shown(layers())) {
+      // the art itself sits under the photo's shading; a clear box on top takes the clicks and shows the handles
+      const c = canvasFor(l), v = h("div", { class: "sb-pl" });
+      v.style.cssText = at(l);
+      if (c) { c.classList.add("sb-bmp"); v.append(c); }
+      inkEls.push(v);
+      const node = h("div", { class: `sb-layer${l.id === S.sel ? " sel" : ""}${l.locked ? " locked" : ""}`, "data-id": l.id, title: l.name });
+      node.style.cssText = at(l);
       if (l.id === S.sel && !l.locked) node.append(h("span", { class: "sb-h-scale", "data-handle": "scale", "aria-hidden": "true" }), h("span", { class: "sb-h-rot", "data-handle": "rot", "aria-hidden": "true" }));
-      return node;
-    });
-    put(area, ...els);
+      hits.push(node);
+    }
+    put(printBox, ...inkEls);
+    put(area, ...hits);
     drawSizeLine();
+    layout();
   }
 
   function drawSizeLine() {
     const l = selLayer();
-    if (!l || l.hidden) { const bb = boundsOf(shown(layers())); sizeLine.textContent = bb ? `Design on the ${S.side}: ${fmtIn(bb.w)} wide × ${fmtIn(bb.h)} tall` : "Pick an idea, or add text, art or your own image."; return; }
+    if (!l || l.hidden) { const bb = boundsOf(shown(layers())); sizeLine.textContent = bb ? `Design on the ${S.side}: ${fmtIn(bb.w)} wide × ${fmtIn(bb.h)} tall` : "Add text, one of your designs or your own image to start."; return; }
     const off = outside([l]) ? " · part is outside the print area and won't print" : "";
     const src = l.type === "image" ? sources.get(l.src) : null;
     const st = src ? img.printStats(src.full.width * cropFrac(l).w, src.full.height * cropFrac(l).h, l.w, l.h) : null;
     put(sizeLine, `${l.name}: ${fmtIn(l.w)} × ${fmtIn(l.h)}`,
+      l.type === "text" && !l.locked ? h("span", { class: "sb-hint" }, " · double-tap the text to type") : null,
       st ? h("span", { class: `sb-dpi ${st.level}` }, ` · ${Math.round(st.dpi)} DPI ${st.level === "good" ? "✓ sharp" : st.level === "ok" ? "· may look soft" : "· too small, will print blurry"}`) : null, off ? h("span", { class: "sb-dpi low" }, off) : null);
   }
 
   // pointer: drag to move, handles to scale and rotate; on the Draw tab, drag draws a line
   let drag = null, stroke = null;
+  const lastTap = { id: null, t: 0 };
   const toIn = (e) => { const r = area.getBoundingClientRect(), s = ppi(); return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; };
   area.addEventListener("pointerdown", (e) => {
     if (drawing()) { e.preventDefault(); area.setPointerCapture(e.pointerId); startStroke(toIn(e)); return; }
@@ -309,6 +402,10 @@ async function start(cfg) {
     const l = layers().find((x) => x.id === node.dataset.id);
     if (!l) return;
     if (S.sel !== l.id) { S.sel = l.id; drawStage(); if (!panels.Edit.hidden) drawEdit(); if (!panels.Layers.hidden) drawLayers(); }
+    // double-click or double-tap text on the shirt to type in it
+    const now = performance.now();
+    if (l.type === "text" && lastTap.id === l.id && now - lastTap.t < 400) { lastTap.id = null; showTab("Edit"); focusTextBox(false); return; }
+    lastTap.id = l.id; lastTap.t = now;
     if (l.locked) return;
     e.preventDefault();
     area.setPointerCapture(e.pointerId);
@@ -378,7 +475,17 @@ async function start(cfg) {
     const l = textLayer(text);
     await loadFont(l.text.font);
     fitTextBox(l); l.y = Math.min(PH / 2, l.h / 2 + 1);
-    addLayer(l); showTab("Edit");
+    addLayer(l); showTab("Edit"); focusTextBox(true);
+  }
+  // put the cursor in the text box so people can type right away (also used by double-tap on the shirt)
+  function focusTextBox(selectAll) {
+    requestAnimationFrame(() => {
+      const ta = panels.Edit.querySelector("textarea.sb-textinput");
+      if (!ta) return;
+      ta.scrollIntoView({ block: "center", behavior: "smooth" });
+      ta.focus({ preventScroll: true });
+      if (selectAll) ta.select(); else ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
   }
   const vecDefaults = () => ({ fill: ink(), grad: null, gradAngle: 90, outline: shirtDark() ? "#111111" : "#ffffff", outlineW: 0, shadow: null, shadowX: 4, shadowY: 4, line: 0 });
   function vecLayer(vec, name, art, w = PW * 0.45) {
@@ -478,13 +585,13 @@ async function start(cfg) {
       if (!res.ok) throw new Error(res.statusText);
       lib.items = ((await res.json()).items ?? []).filter((i) => i.public !== false);
       if (lib.items.some(isFocus)) lib.cat = FOCUS;
-    } catch { lib.error = "The art library couldn't load. You can still use the clip art and shapes, or upload your own art."; }
+    } catch { lib.error = "Your designs couldn't load. Check your connection and refresh, or upload your own art."; }
     lib.loaded = true;
   }
   const libUrl = (i) => `${libBase}/api/images/${encodeURIComponent(i.key)}`;
   function drawLibrary(p) {
     if (!lib.loaded) { put(p, h("p", { class: "muted" }, "Loading art…")); return; }
-    if (!lib.items.length && !lib.error) { put(p, h("p", { class: "muted" }, "New designs are on the way. In the meantime, try the clip art, shapes", geo ? " and patterns" : "", ", or upload your own.")); return; }
+    if (!lib.items.length && !lib.error) { put(p, h("p", { class: "muted" }, "New designs are on the way. In the meantime, add text or shapes", geo ? ", make a pattern" : "", " or upload your own art.")); return; }
     const q = lib.q.toLowerCase().trim();
     const cats = [...new Set(lib.items.map((i) => i.category).filter(Boolean))].sort();
     const list = lib.items.filter((i) => (!lib.cat || (lib.cat === FOCUS ? isFocus(i) : i.category === lib.cat)) && (!lib.kind || kindOf(i) === lib.kind) &&
@@ -518,13 +625,13 @@ async function start(cfg) {
   }
 
   // ---------- art tab: clip art, shapes, patterns, library ----------
-  const art = { seg: "clip", q: "", group: -1, shown: 90, color: null, icons: null, loading: null };
+  const art = { seg: "shapes", q: "", group: -1, shown: 90, color: null, icons: null, loading: null };
   const artBody = h("div", { class: "sb-artbody" });
   const loadArt = () => (art.loading ??= cfg.artUrl
     ? fetch(cfg.artUrl).then((r) => (r.ok ? r.json() : null)).then((j) => { art.icons = j; }).catch(() => { art.icons = null; })
     : Promise.resolve());
   const artColor = () => art.color ?? ink();
-  const segs = () => [...(cfg.artUrl ? [["clip", "Clip art"]] : []), ["shapes", "Shapes"], ...(geo ? [["patterns", "Patterns"]] : []), ["library", cfg.libraryLabel || "Library"]];
+  const segs = () => [["shapes", "Shapes"], ...(geo ? [["patterns", "Patterns"]] : []), ...(cfg.artUrl ? [["clip", "Icons"]] : [])];
   function drawArt() {
     if (!segs().some(([k]) => k === art.seg)) art.seg = segs()[0][0];
     const colorRow = art.seg === "clip" || art.seg === "shapes"
@@ -534,8 +641,13 @@ async function start(cfg) {
     put(panels.Art, h("h2", { class: "sb-h" }, "Art"), pills("Kind of art", segs(), art.seg, (k) => { art.seg = k; drawArt(); }, "sb-segs"), colorRow, artBody);
     if (art.seg === "clip") drawClipArt();
     else if (art.seg === "shapes") drawShapes();
-    else if (art.seg === "patterns") drawExplore();
-    else drawLibrary(artBody);
+    else drawExplore();
+  }
+  // the art library (the console's designs) has its own tool
+  const libBody = h("div", { class: "sb-artbody" });
+  function drawLibraryTab() {
+    put(panels.Library, h("h2", { class: "sb-h" }, cfg.libraryLabel || "Your designs"), libBody);
+    drawLibrary(libBody);
   }
   function drawClipArt() {
     if (!art.icons) {
@@ -747,21 +859,26 @@ async function start(cfg) {
   const ideaList = () => (tplMod?.TEMPLATES ?? []).filter((t) => (t.needs !== "pattern" || geo) && (cfg.artUrl || !t.build(kit()).some((sp) => sp.t === "icon")));
   const ideaFonts = (t) => [...new Set(t.build(kit(t.accent)).filter((sp) => sp.t === "text").map((sp) => sp.font))];
   async function ideaThumb(t) {
-    const key = `${t.id}|${S.color}`;
+    const key = `${t.id}|${S.color}|${styleOf()}`;
     if (ideaThumbs.has(key)) return ideaThumbs.get(key);
     await Promise.all(ideaFonts(t).map(loadFont));
-    const W = 150, Hh = 200, s = W / 12, c = h("canvas", { width: W, height: Hh }), ctx = c.getContext("2d");
-    ctx.fillStyle = hexFor(S.color); ctx.fillRect(0, 0, W, Hh);
-    for (const sp of t.build(kit(t.accent))) {
-      let bmp = null;
-      if (sp.t === "text") bmp = ds.renderText(specText(sp), 48);
-      else if (sp.t === "pattern") bmp = await svgToImage(geo.generate(geo.normalize(sp)), 300, 300);
-      else { const v = specVec(sp); if (v) bmp = ds.renderVec(v, 160); }
-      if (!bmp) continue;
-      const w = sp.w * s, hh = w * (bmp.height / bmp.width);
-      ctx.drawImage(bmp, sp.x * s - w / 2, sp.y * s - hh / 2, w, hh);
-    }
-    const url = c.toDataURL("image/png");
+    const px = 560;
+    const c = await shirtPhoto("front", px, async (ctx, ax, ay, s) => {
+      for (const sp of t.build(kit(t.accent))) {
+        let bmp = null;
+        if (sp.t === "text") bmp = ds.renderText(specText(sp), 48);
+        else if (sp.t === "pattern") bmp = await svgToImage(geo.generate(geo.normalize(sp)), 300, 300);
+        else { const v = specVec(sp); if (v) bmp = ds.renderVec(v, 160); }
+        if (!bmp) continue;
+        const w = sp.w * s, hh = w * (bmp.height / bmp.width);
+        ctx.drawImage(bmp, ax + sp.x * s - w / 2, ay + sp.y * s - hh / 2, w, hh);
+      }
+    });
+    // crop to the chest, 3:4
+    const a = areaBox("front"), cw = a.w * px * 1.5, ch = cw * 4 / 3, cx = (a.x + a.w / 2) * px, cy = a.y * px - cw * 0.12;
+    const out = document.createElement("canvas"); out.width = 240; out.height = 320;
+    out.getContext("2d").drawImage(c, cx - cw / 2, cy, cw, ch, 0, 0, 240, 320);
+    const url = out.toDataURL("image/jpeg", 0.86);
     ideaThumbs.set(key, url);
     return url;
   }
@@ -954,7 +1071,7 @@ async function start(cfg) {
   function textControls(l) {
     const t = l.text;
     const redraw = async (save) => { await loadFont(t.font); rendered.delete(l.id); const r = l.w; fitTextBox(l); l.w = r; fitTextBox(l); l.name = nameOf(t.value); drawStage(); if (save) commit(); };
-    const ta = h("textarea", { class: "field", rows: 2, "aria-label": "Text", maxlength: 200 }, t.value);
+    const ta = h("textarea", { class: "field sb-textinput", rows: 3, "aria-label": "Your text", placeholder: "Type your text", maxlength: 200 }, t.value);
     ta.addEventListener("input", debounce(() => { t.value = ta.value; redraw(false); }, 200));
     ta.addEventListener("change", () => commit());
     const warpRow = h("div", { class: "sb-group" },
@@ -1263,27 +1380,21 @@ async function start(cfg) {
     ctx.restore();
   }
   async function renderMockup() {
-    const W = 1000, H = 1200;
-    const c = document.createElement("canvas"); c.width = W * 2; c.height = H;
+    const W = 1080;
+    const c = document.createElement("canvas"); c.width = W * 2; c.height = W;
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, H);
     for (const [i, side] of ["front", "back"].entries()) {
-      const svgImg = await svgToImage(shirtSvg(hexFor(S.color), side), W, H);
-      ctx.drawImage(svgImg, i * W, 0, W, H);
-      paintSide(ctx, side, i * W + W * AREA.x, H * AREA.y, (W * AREA.w) / PW);
-      ctx.fillStyle = "#555"; ctx.font = "28px system-ui, sans-serif"; ctx.textAlign = "center";
-      ctx.fillText(side === "front" ? "Front" : "Back", i * W + W / 2, H - 24);
+      ctx.drawImage(await shirtPhoto(side, W, (x, ax, ay, s) => paintSide(x, side, ax, ay, s)), i * W, 0);
+      ctx.fillStyle = "#6b6b6b"; ctx.font = "500 26px system-ui, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(side === "front" ? "Front" : "Back", i * W + W / 2, W - 28);
     }
     return new Promise((r) => c.toBlob(r, "image/png"));
   }
   // small picture of the side with art, for saved designs
   async function renderThumb() {
-    const W = 120, H = 144, side = shown(S.layers.front).length || !shown(S.layers.back).length ? "front" : "back";
-    const c = document.createElement("canvas"); c.width = W; c.height = H;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(await svgToImage(shirtSvg(hexFor(S.color), side), W, H), 0, 0, W, H);
-    paintSide(ctx, side, W * AREA.x, H * AREA.y, (W * AREA.w) / PW);
-    return c.toDataURL("image/png");
+    const side = shown(S.layers.front).length || !shown(S.layers.back).length ? "front" : "back";
+    const c = await shirtPhoto(side, 240, (x, ax, ay, s) => paintSide(x, side, ax, ay, s));
+    return c.toDataURL("image/jpeg", 0.85);
   }
 
   // ---------- undo and shortcuts ----------
@@ -1343,7 +1454,8 @@ async function start(cfg) {
   if (geo) ex.palette = geo.defaultPalette(shirtDark());
   commit();
   loadFont(textFont);
-  loadLibrary().then(() => { if (!panels.Art.hidden && art.seg === "library") drawArt(); });
+  drawLibraryTab();
+  loadLibrary().then(() => drawLibraryTab());
   offerDraft();
 }
 
@@ -1398,23 +1510,6 @@ async function withDpi(blob, dpi) {
   dv.setUint32(17, (c ^ -1) >>> 0);
   const at = 33; // after the 8-byte signature and the 25-byte IHDR chunk
   return new Blob([src.subarray(0, at), chunk, src.subarray(at)], { type: "image/png" });
-}
-const AREA = { x: 0.3, y: 0.24, w: 0.4 }; // print area as a fraction of the shirt drawing
-function shirtSvg(fill, side) {
-  const neck = side === "back" ? "Q250 62 335 40" : "Q250 98 335 40";
-  // One outline for the whole shirt, so the shading runs across sleeves and body without a seam.
-  const body = `M165 40 L120 55 L20 120 L60 215 L110 190 L110 570 Q250 585 390 570 L390 190 L440 215 L480 120 L380 55 L335 40 ${side === "back" ? "Q250 62 165 40" : "Q250 98 165 40"} Z`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 600" width="500" height="600" aria-hidden="true">
-    <defs>
-      <linearGradient id="sbsh" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".12"/><stop offset=".22" stop-color="#000" stop-opacity=".02"/><stop offset=".5" stop-color="#fff" stop-opacity=".06"/><stop offset=".78" stop-color="#000" stop-opacity=".02"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
-      <linearGradient id="sbsv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".05"/><stop offset="1" stop-color="#000" stop-opacity=".07"/></linearGradient>
-    </defs>
-    <path d="${body}" fill="${fill}" stroke="rgba(0,0,0,.28)" stroke-width="2" stroke-linejoin="round"/>
-    <path d="${body}" fill="url(#sbsh)"/>
-    <path d="${body}" fill="url(#sbsv)"/>
-    <path d="M120 55 Q134 126 110 190 M380 55 Q366 126 390 190 M29 116 L69 211 M471 116 L431 211 M110 556 Q250 571 390 556" fill="none" stroke="rgba(0,0,0,.10)" stroke-width="1.5"/>
-    <path d="M165 40 ${neck}" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="6" stroke-linecap="round"/>
-  </svg>`;
 }
 function svgToImage(svg, w, hgt) {
   return new Promise((ok, fail) => {
