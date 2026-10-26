@@ -105,7 +105,7 @@ export const TEMPLATES = [
   {
     id: "jersey", name: "Jersey number", accent: "varsity",
     build: (k) => [
-      { t: "text", value: "LEWIS", font: "Big Shoulders Display", x: 6, y: 2.2, w: 7, color: k.ink, spacing: 20, warp: "arc", curve: 20 },
+      { t: "text", value: "ALL STARS", font: "Big Shoulders Display", x: 6, y: 2.2, w: 7, color: k.ink, spacing: 20, warp: "arc", curve: 20 },
       { t: "text", value: "07", font: "Big Shoulders Display", x: 6, y: 7.4, w: 7.5, color: k.a, outline: k.ink, outlineW: 3, outline2: k.b, outline2W: 3 },
     ],
   },
