@@ -8,12 +8,18 @@ export const SIZE = 1000;
 const MIN_LINE = 8;
 
 export const STYLES = [
-  ["hex", "Hex grid"], ["cubes", "3D cubes"], ["tri", "Triangles"], ["truchet", "Circuit"],
+  ["sunset", "Retro sunset"], ["stripes", "Stripes"], ["checker", "Checkerboard"], ["dots", "Polka dots"], ["waves", "Waves"],
+  ["chevron", "Zigzag"], ["plaid", "Plaid"], ["camo", "Camo"], ["halftone", "Halftone"], ["memphis", "Memphis 90s"],
+  ["stars", "Stars"], ["hex", "Hex grid"], ["cubes", "3D cubes"], ["tri", "Triangles"], ["truchet", "Circuit"],
   ["rings", "Op rings"], ["burst", "Burst"], ["shift", "Shifted squares"], ["glitch", "Glitch bars"],
 ];
 export const SHAPES = [["circle", "Circle"], ["hex", "Hexagon"], ["square", "Square"], ["diamond", "Diamond"], ["shield", "Shield"], ["none", "Full"]];
 // `on`: the shirt shade a palette reads best on, used to pick a sensible default.
 export const PALETTES = [
+  { id: "retro", name: "Retro", on: "any", colors: ["#f9c74f", "#f8961e", "#f3722c", "#c1121f"] },
+  { id: "pastel", name: "Pastel", on: "dark", colors: ["#ffd6e0", "#c1e7ff", "#d4f0c0", "#fff1b8"] },
+  { id: "camo", name: "Woodland", on: "any", colors: ["#4b5320", "#6b705c", "#a5a58d", "#2f2f24"] },
+  { id: "usa", name: "Red white blue", on: "any", colors: ["#b22234", "#ffffff", "#3c3b6e", "#d9d9d9"] },
   { id: "neon", name: "Neon", on: "dark", colors: ["#c8ff2e", "#ff2e88", "#2ee6ff", "#8b5cff"] },
   { id: "concrete", name: "Concrete", on: "any", colors: ["#e9e7e2", "#a3a39e", "#5c5d62", "#2a2b2f"] },
   { id: "street", name: "Street", on: "any", colors: ["#ffd23f", "#ee4266", "#3bceac", "#540d6e"] },
@@ -83,6 +89,109 @@ function outline(shape) {
 // ---------- styles ----------
 // Each returns SVG markup drawn over the whole square; the outline clips it afterwards.
 const STYLE_FNS = {
+  sunset(r, cols, n, pal) {
+    // a sun cut by horizontal bars that get thicker toward the bottom, 80s style
+    const out = [], R = SIZE * 0.42, cy = C + SIZE * 0.06, bands = Math.max(3, Math.round(cols / 1.5)), gap = Math.max(MIN_LINE * 2, SIZE / (bands * 9));
+    const id = `sun${Math.floor(r() * 1e6)}`;
+    out.push(`<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">${pal.map((c, i) => `<stop offset="${f(i / Math.max(1, pal.length - 1))}" stop-color="${c}"/>`).join("")}</linearGradient></defs>`);
+    let mask = "";
+    for (let i = 0; i < bands; i++) {
+      const y = cy - R * 0.1 + (i * R * 1.1) / bands, h = gap * (1 + i * 0.6);
+      mask += `<rect x="0" y="${f(y)}" width="${SIZE}" height="${f(h)}"/>`;
+    }
+    // draw the disc as an evenodd path minus the bars, so the gaps are truly see-through
+    out.push(`<path fill="url(#${id})" fill-rule="evenodd" d="M${f(C - R)} ${f(cy)} a${f(R)} ${f(R)} 0 1 0 ${f(R * 2)} 0 a${f(R)} ${f(R)} 0 1 0 ${f(-R * 2)} 0Z"/>`);
+    return `<g>${out.join("")}</g><g fill="#000" data-cut="1">${mask}</g>`;
+  },
+  stripes(r, cols, n, pal) {
+    const w = SIZE / (cols * 2), ang = [0, 45, 90, -45][Math.floor(r() * 4)], out = [];
+    for (let i = -cols * 3; i < cols * 3; i++) out.push(`<rect x="${f(i * w * 2)}" y="-1000" width="${f(w)}" height="3000" fill="${pal[((i % pal.length) + pal.length) % pal.length]}"/>`);
+    return `<g transform="rotate(${ang} ${C} ${C})">${out.join("")}</g>`;
+  },
+  checker(r, cols, n, pal) {
+    const s = SIZE / cols, out = [], warp = r() < 0.4;
+    for (let y = 0; y < cols; y++) for (let x = 0; x < cols; x++) if ((x + y) % 2 === 0) {
+      const k = warp ? 1 + 0.25 * Math.sin((x + y) / 2) : 1;
+      out.push(`<rect x="${f(x * s)}" y="${f(y * s)}" width="${f(s * k)}" height="${f(s * k)}" fill="${pal[(x + y) / 2 % pal.length | 0]}"/>`);
+    }
+    return out.join("");
+  },
+  dots(r, cols, n) {
+    const s = SIZE / cols, rad = s * (0.22 + r() * 0.16), out = [];
+    for (let y = 0; y <= cols; y++) for (let x = 0; x <= cols; x++) out.push(`<circle cx="${f(x * s + (y % 2 ? s / 2 : 0))}" cy="${f(y * s)}" r="${f(rad)}" fill="${n(r)}"/>`);
+    return out.join("");
+  },
+  waves(r, cols, n, pal) {
+    const rows = cols, h = SIZE / rows, amp = h * (0.25 + r() * 0.25), wl = SIZE / (2 + Math.floor(r() * 3)), wgt = Math.max(MIN_LINE * 2, h * 0.35), out = [];
+    for (let i = 0; i <= rows; i++) {
+      let d = `M-50 ${f(i * h)}`;
+      for (let x = -50; x <= SIZE + 50; x += wl / 2) d += ` Q${f(x + wl / 4)} ${f(i * h + (((x + 50) / (wl / 2)) % 2 ? -amp : amp))} ${f(x + wl / 2)} ${f(i * h)}`;
+      out.push(`<path d="${d}" fill="none" stroke="${pal[i % pal.length]}" stroke-width="${f(wgt)}" stroke-linecap="round"/>`);
+    }
+    return out.join("");
+  },
+  chevron(r, cols, n, pal) {
+    const rows = cols, h = SIZE / rows, w = SIZE / cols, wgt = Math.max(MIN_LINE * 2, h * 0.4), out = [];
+    for (let i = 0; i <= rows; i++) {
+      let d = `M${f(-w)} ${f(i * h)}`;
+      for (let x = -w; x <= SIZE + w; x += w) d += ` L${f(x + w / 2)} ${f(i * h - h * 0.45)} L${f(x + w)} ${f(i * h)}`;
+      out.push(`<path d="${d}" fill="none" stroke="${pal[i % pal.length]}" stroke-width="${f(wgt)}" stroke-linejoin="miter"/>`);
+    }
+    return out.join("");
+  },
+  plaid(r, cols, n, pal) {
+    // woven look from solid cells: where a dark row band meets a dark column band, use the darkest color
+    const s = SIZE / (cols * 2), out = [], band = (i) => (i % 4 === 0 ? 2 : i % 2);
+    for (let y = 0; y < cols * 2; y++) for (let x = 0; x < cols * 2; x++) {
+      const v = band(x) + band(y), c = pal[Math.min(pal.length - 1, v === 0 ? 0 : v <= 1 ? 1 : v <= 2 ? 2 : 3)];
+      out.push(`<rect x="${f(x * s)}" y="${f(y * s)}" width="${f(s + 0.5)}" height="${f(s + 0.5)}" fill="${c}"/>`);
+    }
+    return out.join("");
+  },
+  camo(r, cols, n, pal) {
+    const out = [`<rect width="${SIZE}" height="${SIZE}" fill="${pal[0]}"/>`];
+    const blobs = cols * cols * 1.2;
+    for (let i = 0; i < blobs; i++) {
+      const cx = r() * SIZE, cy = r() * SIZE, base = SIZE / cols * (0.4 + r() * 0.6), pts = 9, c = pal[1 + Math.floor(r() * (pal.length - 1))];
+      const p = Array.from({ length: pts }, (_, k) => { const a = (k / pts) * Math.PI * 2, rr = base * (0.6 + r() * 0.6); return [cx + rr * Math.cos(a), cy + rr * Math.sin(a) * 0.7]; });
+      let d = `M${f((p[0][0] + p[pts - 1][0]) / 2)} ${f((p[0][1] + p[pts - 1][1]) / 2)}`;
+      for (let k = 0; k < pts; k++) { const a = p[k], b = p[(k + 1) % pts]; d += ` Q${f(a[0])} ${f(a[1])} ${f((a[0] + b[0]) / 2)} ${f((a[1] + b[1]) / 2)}`; }
+      out.push(`<path d="${d}Z" fill="${c}"/>`);
+    }
+    return out.join("");
+  },
+  halftone(r, cols, n, pal) {
+    // dots that grow toward one corner, like a comic print
+    const s = SIZE / (cols * 2), ang = r() * Math.PI * 2, out = [], c = pal[Math.floor(r() * pal.length)];
+    for (let y = 0; y <= cols * 2; y++) for (let x = 0; x <= cols * 2; x++) {
+      const px = x * s + (y % 2 ? s / 2 : 0), py = y * s;
+      const t = ((px - C) * Math.cos(ang) + (py - C) * Math.sin(ang)) / SIZE + 0.5;
+      const rad = s * 0.62 * Math.max(0, Math.min(1, t));
+      if (rad >= MIN_LINE / 2) out.push(`<circle cx="${f(px)}" cy="${f(py)}" r="${f(rad)}" fill="${c}"/>`);
+    }
+    return out.join("");
+  },
+  memphis(r, cols, n) {
+    // 90s confetti: squiggles, triangles, rings and dots
+    const out = [], count = cols * cols, sz = SIZE / cols;
+    for (let i = 0; i < count; i++) {
+      const x = r() * SIZE, y = r() * SIZE, c = n(r), rot = f(r() * 360), k = sz * (0.25 + r() * 0.25), kind = Math.floor(r() * 4);
+      if (kind === 0) out.push(`<path d="M${f(x - k)} ${f(y)} q${f(k / 2)} ${f(-k / 2)} ${f(k)} 0 t${f(k)} 0" fill="none" stroke="${c}" stroke-width="${f(Math.max(MIN_LINE * 1.5, k / 4))}" stroke-linecap="round" transform="rotate(${rot} ${f(x)} ${f(y)})"/>`);
+      else if (kind === 1) out.push(`<polygon points="${f(x)},${f(y - k)} ${f(x + k)},${f(y + k * 0.7)} ${f(x - k)},${f(y + k * 0.7)}" fill="${c}" transform="rotate(${rot} ${f(x)} ${f(y)})"/>`);
+      else if (kind === 2) out.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(k * 0.7)}" fill="none" stroke="${c}" stroke-width="${f(Math.max(MIN_LINE * 1.5, k / 4))}"/>`);
+      else out.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(k * 0.35)}" fill="${c}"/>`);
+    }
+    return out.join("");
+  },
+  stars(r, cols, n) {
+    const out = [], count = Math.round(cols * cols * 0.8), sz = SIZE / cols;
+    for (let i = 0; i < count; i++) {
+      const x = r() * SIZE, y = r() * SIZE, R = sz * (0.2 + r() * 0.4), rot = r() * Math.PI;
+      const pts = Array.from({ length: 10 }, (_, k) => { const a = rot + (k * Math.PI) / 5, rr = k % 2 ? R * 0.42 : R; return `${f(x + rr * Math.cos(a))},${f(y + rr * Math.sin(a))}`; }).join(" ");
+      out.push(`<polygon points="${pts}" fill="${n(r)}"/>`);
+    }
+    return out.join("");
+  },
   hex(r, cols, n) {
     const R = SIZE / (cols * 1.5) * 1.05, w = Math.sqrt(3) * R, gap = Math.max(MIN_LINE, R * 0.12);
     const out = [];
@@ -190,10 +299,13 @@ export function generate(opts) {
   const r = rng(o.seed * 2654435761 + o.density);
   const pal = PALETTES.find((p) => p.id === o.palette).colors;
   const n = (rr) => pal[Math.floor(rr() * pal.length)];
-  const art = STYLE_FNS[o.style](r, o.density, n, pal);
+  let art = STYLE_FNS[o.style](r, o.density, n, pal);
   const clip = outline(o.shape);
   // the id is unique per design, so several designs inlined in one page don't share a clip
   const id = `epx-${o.style}-${o.shape}-${o.seed.toString(36)}`;
+  // styles can return a group marked data-cut: those shapes are cut out of the art with a mask
+  const cut = art.match(/<g fill="#000" data-cut="1">([\s\S]*)<\/g>$/);
+  if (cut) art = `<defs><mask id="${id}-m" maskUnits="userSpaceOnUse" x="0" y="0" width="${SIZE}" height="${SIZE}"><rect width="${SIZE}" height="${SIZE}" fill="#fff"/><g fill="#000">${cut[1]}</g></mask></defs><g mask="url(#${id}-m)">${art.slice(0, cut.index)}</g>`;
   const body = clip
     ? `<defs><clipPath id="${id}">${clip}</clipPath></defs><g clip-path="url(#${id})">${art}</g>`
     : art;

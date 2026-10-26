@@ -66,7 +66,8 @@
     <p class="small">EPIX3D is a label of Elevated Designs in Charleston, SC. Orders and payment are handled securely by Shopify at elevatedshirts.com.</p>
   </footer>
   <!-- Settings. storeUrl: the Elevated Designs store (checkout). libraryUrl: the Business Console (public art only).
-       libraryFocus: library categories or tags shown first as "Epix3D picks". geometryUrl turns on the Explore pattern maker. -->
+       libraryFocus: library categories or tags shown first as "Epix3D picks". geometryUrl turns on the pattern maker,
+       fontsUrl the self-hosted font catalog and artUrl the clip art. design.js, templates.js and store.js load from next to app.js. -->
   <script type="application/json" data-sb-config>
     {
       "storeUrl": "https://elevatedshirts.com",
@@ -79,18 +80,15 @@
       "maxUploadMb": 20,
       "colorHex": "",
       "heading": "Design your shirt",
-      "note": "Every style in one place. Shuffle up a pattern, add art and text, or upload your own, and we'll print it for you in Charleston, SC.",
+      "note": "Every style in one place. Start from an idea or a blank shirt, mix fonts, clip art, patterns and your own photos, and we'll print it for you in Charleston, SC.",
       "currency": "USD",
       "designIdPrefix": "EPX",
       "libraryFocus": ["Epix3D"],
       "libraryFocusLabel": "EPIX3D picks",
       "librarySearchHint": "Search art, e.g. skull, sunset, flowers",
       "textFont": "Bebas Neue",
-      "fonts": [
-        ["Bebas Neue", "Bebas+Neue"], ["Anton", "Anton"], ["Bungee", "Bungee"], ["Rubik Mono One", "Rubik+Mono+One"],
-        ["Black Ops One", "Black+Ops+One"], ["Russo One", "Russo+One"], ["Orbitron", "Orbitron:wght@800"], ["Monoton", "Monoton"],
-        ["Permanent Marker", "Permanent+Marker"], ["Major Mono Display", "Major+Mono+Display"], ["Space Grotesk", "Space+Grotesk:wght@700"], ["Inter", "Inter:wght@800"]
-      ]
+      "fontsUrl": "fonts/fonts.json",
+      "artUrl": "art/icons.json"
     }
   </script>
   <script src="app.js" type="module"></script>

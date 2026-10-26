@@ -320,6 +320,215 @@ export function quantize(img, colors = 8) {
   return { image: out, palette: centers };
 }
 
+// ---------- style effects ----------
+// Spatial sizes are in percent of the image's longest side, so the preview and the full-size print match.
+const unitPx = (img, pct) => Math.max(1, Math.round((Math.max(img.width, img.height) * pct) / 100));
+const lumAt = (d, i) => lum(d[i], d[i + 1], d[i + 2]);
+
+// Grows the canvas by px on every side (transparent), so outlines and shadows have room.
+export function pad(img, px) {
+  px = Math.max(0, Math.round(px));
+  if (!px) return clone(img);
+  const w = img.width + px * 2, out = blank(w, img.height + px * 2);
+  for (let y = 0; y < img.height; y++) out.data.set(img.data.subarray(y * img.width * 4, (y + 1) * img.width * 4), ((y + px) * w + px) * 4);
+  return out;
+}
+
+// Maps dark to one color and light to another; alpha is kept.
+export function duotone(img, dark, light) {
+  const out = clone(img), d = out.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const t = lumAt(d, i) / 255;
+    for (let c = 0; c < 3; c++) d[i + c] = dark[c] + (light[c] - dark[c]) * t;
+  }
+  return out;
+}
+
+// Stencil: pixels darker than the cutoff become solid ink, the rest drop out.
+export function stencil(img, cutoff = 128, ink = [0, 0, 0]) {
+  const out = clone(img), d = out.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const on = d[i + 3] >= 128 && lumAt(d, i) < cutoff;
+    d[i] = ink[0]; d[i + 1] = ink[1]; d[i + 2] = ink[2]; d[i + 3] = on ? 255 : 0;
+  }
+  return out;
+}
+
+// Big blocky pixels; cell is a percent of the longest side.
+export function pixelate(img, cellPct = 2) {
+  const { width: w, height: h } = img, cell = unitPx(img, cellPct), out = blank(w, h), s = img.data, d = out.data;
+  for (let by = 0; by < h; by += cell) for (let bx = 0; bx < w; bx += cell) {
+    const ex = Math.min(w, bx + cell), ey = Math.min(h, by + cell);
+    let r = 0, g = 0, b = 0, a = 0, n = 0;
+    for (let y = by; y < ey; y++) for (let x = bx; x < ex; x++) { const i = (y * w + x) * 4, al = s[i + 3]; r += s[i] * al; g += s[i + 1] * al; b += s[i + 2] * al; a += al; n++; }
+    const on = a / n >= 128, k = a ? 1 / a : 0;
+    for (let y = by; y < ey; y++) for (let x = bx; x < ex; x++) {
+      const i = (y * w + x) * 4;
+      d[i] = r * k; d[i + 1] = g * k; d[i + 2] = b * k; d[i + 3] = on ? 255 : 0;
+    }
+  }
+  return out;
+}
+
+// Halftone: solid round dots sized by darkness (or by coverage for one-color art), in one ink color.
+// Every dot is fully solid, so it prints cleanly on DTF. angle in degrees.
+// by: "dark" (dots grow in dark areas), "light" (in light areas, for light ink on a dark shirt) or "solid" (even dots).
+export function halftone(img, { cellPct = 1.6, angle = 45, ink = null, by = "dark" } = {}) {
+  const { width: w, height: h } = img, s = img.data, out = blank(w, h), d = out.data;
+  const cell = Math.max(3, unitPx(img, cellPct)), a = (angle * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+  // average darkness of a cell, sampled around its centre
+  const tone = (cx, cy) => {
+    let sum = 0, n = 0;
+    const r = Math.max(1, Math.floor(cell / 2));
+    for (let y = Math.max(0, Math.round(cy) - r); y <= Math.min(h - 1, Math.round(cy) + r); y++)
+      for (let x = Math.max(0, Math.round(cx) - r); x <= Math.min(w - 1, Math.round(cx) + r); x++) {
+        const i = (y * w + x) * 4;
+        const l = lumAt(s, i) / 255, tv = by === "light" ? l : by === "solid" ? 0.6 : 1 - l;
+        sum += tv * (s[i + 3] / 255); n++;
+      }
+    return n ? sum / n : 0;
+  };
+  const cache = new Map();
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    // position in the rotated grid
+    const u = x * ca + y * sa, v = -x * sa + y * ca;
+    const gu = Math.floor(u / cell), gv = Math.floor(v / cell), key = gu * 100003 + gv;
+    let t = cache.get(key);
+    if (t === undefined) {
+      const cu = (gu + 0.5) * cell, cv = (gv + 0.5) * cell;
+      t = tone(cu * ca - cv * sa, cu * sa + cv * ca);
+      cache.set(key, t);
+    }
+    if (t <= 0.02) continue;
+    const du = u - (gu + 0.5) * cell, dv = v - (gv + 0.5) * cell;
+    const radius = Math.sqrt(t) * cell * 0.7071;
+    if (du * du + dv * dv > radius * radius) continue;
+    const i = (y * w + x) * 4, c = ink ?? (s[i + 3] ? [s[i], s[i + 1], s[i + 2]] : [0, 0, 0]);
+    d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+  }
+  return out;
+}
+
+// Worn, printed-on look: knocks out blotches of the art using seeded value noise. amount 0..100.
+export function distress(img, { amount = 40, seed = 7, grainPct = 1.2 } = {}) {
+  const { width: w, height: h } = img, out = clone(img), d = out.data;
+  const cell = unitPx(img, grainPct * 4), fine = unitPx(img, grainPct);
+  let st = seed >>> 0 || 1;
+  const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+  const grid = (c) => { const gw = Math.ceil(w / c) + 2, gh = Math.ceil(h / c) + 2; return { c, gw, v: Float32Array.from({ length: gw * gh }, rnd) }; };
+  const G1 = grid(cell), G2 = grid(fine);
+  const sample = (G, x, y) => {
+    const fx = x / G.c, fy = y / G.c, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const at = (i, j) => G.v[j * G.gw + i];
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    return (at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx) * (1 - sy) + (at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx) * sy;
+  };
+  const cut = 1 - (Math.min(100, Math.max(0, amount)) / 100) * 0.55;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (!d[i + 3]) continue;
+    const n = sample(G1, x, y) * 0.65 + sample(G2, x, y) * 0.35;
+    if (n > cut) d[i + 3] = 0;
+  }
+  return out;
+}
+
+// Sticker-style outline: a solid band of color around the art. widthPct of the longest side.
+// The canvas grows so the band never gets cut off.
+export function outline(img, { widthPct = 2, color = [255, 255, 255] } = {}) {
+  const px = unitPx(img, widthPct), base = pad(img, px + 1);
+  const solid = removeSemiTransparent(base, 64);
+  const grown = roundDilate(solid, px), out = blank(base.width, base.height), d = out.data, b = base.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!grown[i / 4]) continue;
+    const a = b[i + 3] / 255;
+    for (let c = 0; c < 3; c++) d[i + c] = b[i + c] * a + color[c] * (1 - a);
+    d[i + 3] = 255;
+  }
+  return out;
+}
+// Round (disc-shaped) dilation of the alpha mask, so outlines have smooth corners.
+function roundDilate(img, r) {
+  const { width: w, height: h } = img, src = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let p = 0; p < w * h; p++) src[p] = img.data[p * 4 + 3] >= 128 ? 1 : 0;
+  // distance transform (two-pass chamfer) is fast and good enough for an outline
+  const INF = 1e9, dist = new Float32Array(w * h).fill(INF);
+  for (let p = 0; p < w * h; p++) if (src[p]) dist[p] = 0;
+  const D1 = 1, D2 = Math.SQRT2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = y * w + x; let v = dist[p];
+    if (x > 0) v = Math.min(v, dist[p - 1] + D1);
+    if (y > 0) { v = Math.min(v, dist[p - w] + D1); if (x > 0) v = Math.min(v, dist[p - w - 1] + D2); if (x < w - 1) v = Math.min(v, dist[p - w + 1] + D2); }
+    dist[p] = v;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const p = y * w + x; let v = dist[p];
+    if (x < w - 1) v = Math.min(v, dist[p + 1] + D1);
+    if (y < h - 1) { v = Math.min(v, dist[p + w] + D1); if (x < w - 1) v = Math.min(v, dist[p + w + 1] + D2); if (x > 0) v = Math.min(v, dist[p + w - 1] + D2); }
+    dist[p] = v;
+  }
+  for (let p = 0; p < w * h; p++) out[p] = dist[p] <= r ? 1 : 0;
+  return out;
+}
+
+// Hard drop shadow (offset copy in one color), DTF-safe because it has no blur. Offsets in percent.
+export function dropShadow(img, { dxPct = 2, dyPct = 2, color = [0, 0, 0] } = {}) {
+  const dx = Math.round((Math.max(img.width, img.height) * dxPct) / 100), dy = Math.round((Math.max(img.width, img.height) * dyPct) / 100);
+  const w = img.width + Math.abs(dx), h = img.height + Math.abs(dy), out = blank(w, h), d = out.data, s = img.data;
+  const ox = Math.max(0, -dx), oy = Math.max(0, -dy); // where the art itself lands
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    const si = (y * img.width + x) * 4;
+    if (s[si + 3] < 128) continue;
+    const di = ((y + oy + dy) * w + (x + ox + dx)) * 4;
+    d[di] = color[0]; d[di + 1] = color[1]; d[di + 2] = color[2]; d[di + 3] = 255;
+  }
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    const si = (y * img.width + x) * 4, a = s[si + 3];
+    if (!a) continue;
+    const di = ((y + oy) * w + (x + ox)) * 4, k = a / 255, under = d[di + 3] / 255;
+    for (let c = 0; c < 3; c++) d[di + c] = s[si + c] * k + d[di + c] * (1 - k) * under;
+    d[di + 3] = Math.max(a, d[di + 3]);
+  }
+  return out;
+}
+
+// Cuts the art to a shape that fills its box: circle, rounded, hexagon, diamond, star, heart, shield, arch.
+export const MASKS = [["circle", "Circle"], ["rounded", "Rounded"], ["hexagon", "Hexagon"], ["diamond", "Diamond"], ["star", "Star"], ["heart", "Heart"], ["shield", "Shield"], ["arch", "Arch"]];
+export function maskShape(img, shape) {
+  const { width: w, height: h } = img, out = clone(img), d = out.data;
+  const inside = maskTest(shape, w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!inside((x + 0.5) / w, (y + 0.5) / h)) d[(y * w + x) * 4 + 3] = 0;
+  return out;
+}
+function maskTest(shape, w, h) {
+  const polyTest = (pts) => (u, v) => {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > v) !== (yj > v) && u < ((xj - xi) * (v - yi)) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  const ngon = (n, rot) => Array.from({ length: n }, (_, i) => [0.5 + 0.5 * Math.cos(rot + (i * 2 * Math.PI) / n), 0.5 + 0.5 * Math.sin(rot + (i * 2 * Math.PI) / n)]);
+  const ar = w / h, rr = 0.12; // rounded corner radius as a share of the shorter side
+  switch (shape) {
+    case "circle": return (u, v) => (u - 0.5) ** 2 + (v - 0.5) ** 2 <= 0.25;
+    case "rounded": return (u, v) => {
+      const rx = rr * Math.min(1, 1 / ar), ry = rr * Math.min(1, ar);
+      const cx = Math.min(Math.max(u, rx), 1 - rx), cy = Math.min(Math.max(v, ry), 1 - ry);
+      return ((u - cx) / rx) ** 2 + ((v - cy) / ry) ** 2 <= 1;
+    };
+    case "hexagon": return polyTest(ngon(6, 0));
+    case "diamond": return polyTest([[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]);
+    case "star": return polyTest(Array.from({ length: 10 }, (_, i) => { const r = i % 2 ? 0.21 : 0.5, a = -Math.PI / 2 + (i * Math.PI) / 5; return [0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a)]; }));
+    case "heart": return (u, v) => { const x = (u - 0.5) * 2.4, y = (0.45 - v) * 2.4; return (x * x + y * y - 1) ** 3 - x * x * y ** 3 <= 0; };
+    case "shield": return polyTest([[0.5, 0], [0.96, 0.14], [0.96, 0.46], [0.9, 0.66], [0.75, 0.84], [0.5, 1], [0.25, 0.84], [0.1, 0.66], [0.04, 0.46], [0.04, 0.14]]);
+    case "arch": return (u, v) => v >= 0.5 ? true : (u - 0.5) ** 2 + ((v - 0.5) * ar) ** 2 <= 0.25;
+    default: return () => true;
+  }
+}
+
 // ---------- size ----------
 const cubic = (x) => { // Catmull-Rom
   x = Math.abs(x);

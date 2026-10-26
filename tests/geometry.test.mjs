@@ -43,7 +43,7 @@ test("design codes round-trip and bad input is cleaned up", () => {
   assert.deepEqual(g.fromCode(g.codeOf(o)), o);
   assert.equal(g.fromCode("nonsense"), null);
   assert.deepEqual(g.normalize({ style: "nope", palette: "nope", shape: "nope", density: 99, seed: -1 }),
-    { style: "hex", palette: "neon", shape: "circle", density: 12, seed: 4294967295 });
+    { style: g.STYLES[0][0], palette: g.PALETTES[0].id, shape: g.SHAPES[0][0], density: 12, seed: 4294967295 });
   const r = g.randomize(g.rng(1));
   assert.deepEqual(g.normalize(r), r);
 });

@@ -25,14 +25,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Test image tools and pattern maker
+      - name: Test image tools, pattern maker and ideas
         run: node --test tests/*.test.mjs
       - name: Refresh shirt catalog from the store
         run: node scripts/sync-catalog.mjs "${{ vars.STORE_URL || 'https://elevatedshirts.com' }}" "${{ vars.BLANKS_COLLECTION || 'builder-blanks' }}"
       - name: Collect site files
         run: |
           mkdir _site
-          cp -r index.html app.js imaging.js geometry.js styles.css catalog.json manifest.webmanifest robots.txt sitemap.xml fonts icons _site/
+          cp -r index.html app.js imaging.js geometry.js design.js templates.js store.js styles.css catalog.json manifest.webmanifest robots.txt sitemap.xml fonts art icons _site/
           [ -f CNAME ] && cp CNAME _site/ || true
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

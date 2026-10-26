@@ -170,6 +170,8 @@ test("no function mutates its input", () => {
     () => im.removeSemiTransparent(img), () => im.chokeAlpha(img, 2), () => im.dilateAlpha(img, 2),
     () => im.quantize(img, 3), () => im.unsharp(img), () => im.denoise(img), () => im.upscale(img, 2),
     () => im.trimTransparent(img), () => im.thinLineReport(img, 4), () => im.dtfPrep(img, { knockout: [0, 0, 0] }),
+    () => im.pad(img, 3), () => im.duotone(img, [0, 0, 0], [255, 255, 255]), () => im.stencil(img), () => im.pixelate(img, 10),
+    () => im.halftone(img, { cellPct: 10 }), () => im.distress(img), () => im.outline(img), () => im.dropShadow(img), () => im.maskShape(img, "star"),
   ]) { run(); assert.deepEqual(img.data, before); }
 });
 
@@ -180,4 +182,89 @@ test("descreen on 2000x2000 runs within budget", () => {
   const ms = performance.now() - t;
   assert.equal(out.width, 2000);
   assert.ok(ms < 2500, `took ${ms.toFixed(0)} ms`);
+});
+
+// ---------- style effects ----------
+const opaqueCount = (img) => { let n = 0; for (let i = 3; i < img.data.length; i += 4) if (img.data[i] === 255) n++; return n; };
+const semiCount = (img) => { let n = 0; for (let i = 3; i < img.data.length; i += 4) if (img.data[i] > 0 && img.data[i] < 255) n++; return n; };
+const square = (w = 60, fill = [20, 20, 20, 255]) => make(w, w, (x, y) => x >= 15 && x < 45 && y >= 15 && y < 45 ? fill : [0, 0, 0, 0]);
+
+test("pad grows the canvas and keeps the art in the middle", () => {
+  const out = im.pad(square(), 5);
+  assert.equal(out.width, 70); assert.equal(out.height, 70);
+  assert.equal(alphaAt(out, 35, 35), 255);
+  assert.equal(alphaAt(out, 2, 2), 0);
+});
+
+test("duotone maps dark to the first color and light to the second", () => {
+  const img = make(2, 1, (x) => x ? [255, 255, 255, 255] : [0, 0, 0, 255]);
+  const out = im.duotone(img, [10, 20, 30], [200, 210, 220]);
+  assert.deepEqual(px(out, 0, 0), [10, 20, 30, 255]);
+  assert.deepEqual(px(out, 1, 0), [200, 210, 220, 255]);
+});
+
+test("stencil keeps dark pixels as solid ink and drops light ones", () => {
+  const img = make(2, 1, (x) => x ? [240, 240, 240, 255] : [10, 10, 10, 255]);
+  const out = im.stencil(img, 128, [255, 0, 0]);
+  assert.deepEqual(px(out, 0, 0), [255, 0, 0, 255]);
+  assert.equal(alphaAt(out, 1, 0), 0);
+});
+
+test("pixelate makes flat blocks with solid alpha", () => {
+  const img = make(40, 40, (x, y) => [x * 6, y * 6, 100, 255]);
+  const out = im.pixelate(img, 25); // 10px blocks
+  assert.deepEqual(px(out, 0, 0), px(out, 9, 9));
+  assert.notDeepEqual(px(out, 0, 0), px(out, 10, 0));
+  assert.equal(semiCount(out), 0);
+});
+
+test("halftone makes solid dots, bigger where the art is darker", () => {
+  const img = make(120, 60, (x) => x < 60 ? [30, 30, 30, 255] : [190, 190, 190, 255]);
+  const out = im.halftone(img, { cellPct: 8, angle: 0 });
+  assert.equal(semiCount(out), 0);
+  let dark = 0, light = 0;
+  for (let y = 0; y < 60; y++) for (let x = 0; x < 120; x++) if (alphaAt(out, x, y)) x < 60 ? dark++ : light++;
+  assert.ok(dark > light * 1.5, `dark ${dark} light ${light}`);
+  assert.ok(dark < 60 * 60, "leaves gaps between dots");
+  const inverted = im.halftone(img, { cellPct: 8, angle: 0, by: "light" });
+  let d2 = 0, l2 = 0;
+  for (let y = 0; y < 60; y++) for (let x = 0; x < 120; x++) if (alphaAt(inverted, x, y)) x < 60 ? d2++ : l2++;
+  assert.ok(l2 > d2, "light mode puts bigger dots on light areas");
+});
+
+test("distress removes some of the art, repeatably, and only removes", () => {
+  const img = make(100, 100, () => [0, 0, 255, 255]);
+  const a = im.distress(img, { amount: 60, seed: 3 }), b = im.distress(img, { amount: 60, seed: 3 });
+  assert.deepEqual(a.data, b.data);
+  const kept = opaqueCount(a) / (100 * 100);
+  assert.ok(kept > 0.4 && kept < 0.97, `kept ${kept}`);
+  assert.equal(semiCount(a), 0);
+  assert.equal(opaqueCount(im.distress(img, { amount: 0 })), 100 * 100);
+});
+
+test("outline adds a solid band and room for it", () => {
+  const out = im.outline(square(), { widthPct: 5, color: [255, 255, 255] }); // 3px
+  assert.ok(out.width >= 66);
+  const off = (out.width - 60) / 2;
+  assert.deepEqual(px(out, off + 13, off + 30), [255, 255, 255, 255]); // just left of the square
+  assert.deepEqual(px(out, off + 30, off + 30), [20, 20, 20, 255]); // the art itself
+  assert.equal(alphaAt(out, 0, 0), 0);
+  assert.equal(semiCount(out), 0);
+});
+
+test("dropShadow puts a hard offset copy behind the art", () => {
+  const out = im.dropShadow(square(), { dxPct: 5, dyPct: 5, color: [255, 0, 0] }); // 3px
+  assert.equal(out.width, 63); assert.equal(out.height, 63);
+  assert.deepEqual(px(out, 46, 46), [255, 0, 0, 255]); // shadow peeks out bottom-right
+  assert.deepEqual(px(out, 20, 20), [20, 20, 20, 255]);
+  assert.equal(alphaAt(out, 14, 14), 0);
+});
+
+test("maskShape cuts the art to a shape", () => {
+  const img = make(50, 50, () => [9, 9, 9, 255]);
+  for (const [shape] of im.MASKS) {
+    const out = im.maskShape(img, shape);
+    assert.equal(alphaAt(out, 25, 28), 255, `${shape} keeps the middle`);
+    if (shape !== "arch") assert.equal(alphaAt(out, 0, 0), 0, `${shape} drops the corner`);
+  }
 });

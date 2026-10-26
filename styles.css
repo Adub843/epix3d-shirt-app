@@ -163,7 +163,7 @@ h2 { font-size: 1.4rem; margin: 0 0 .5rem; }
   .sb-tabs { position: sticky; top: 0; z-index: 3; }
 }
 @media (max-width: 480px) {
-  /* All six steps fit on a phone without sideways scrolling. */
+  /* All the steps fit on a phone without sideways scrolling: three to a row. */
   .sb-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-radius: 18px; }
   .sb-tabs button { padding: 6px 4px; border-radius: 14px; }
   .sb-panel { padding: 14px; }
@@ -214,9 +214,70 @@ code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; background: v
 .sb-pal-sw { display: inline-flex; flex: none; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.15); }
 .sb-pal-sw i { width: 10px; height: 22px; }
 
-/* seven tabs on a phone: two rows of four */
-@media (max-width: 480px) {
-  .sb-tabs { grid-template-columns: repeat(4, 1fr); }
-  .sb-explore { max-width: 280px; }
-}
-#sb-p-Explore .sb-range { margin-top: 14px; }
+@media (max-width: 480px) { .sb-explore { max-width: 280px; } }
+.sb-artbody .sb-range { margin-top: 14px; }
+
+/* ---------- design tools (shared with the Elevated Designs app) ---------- */
+/* the steps sit in one even row, so nothing scrolls sideways */
+.sb-tabs { display: grid; grid-template-columns: repeat(var(--sb-tabs, 7), minmax(0, 1fr)); border-radius: 18px; }
+.sb-tabs button { padding: 6px 2px; font-size: .84rem; border-radius: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) { .sb-tabs { grid-template-columns: repeat(3, 1fr); } .sb-tabs button { font-size: .9rem; } }
+
+.sb-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--white); box-shadow: var(--shadow); }
+.sb-notice img { border-radius: 6px; }
+.sb-notice span { flex: 1 1 160px; font-weight: 600; }
+
+.sb-pill.sm { min-height: 34px; padding: 4px 11px; font-size: .82rem; }
+.sb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.sb-segs { margin-bottom: 10px; }
+.sb-artbody { display: grid; gap: 8px; margin-top: 8px; }
+.sb-icons { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.sb-tile.on-shirt { background: var(--sb-shirt, #222); color: inherit; padding: 10px; }
+.sb-tile svg { width: 100%; height: 100%; fill: currentColor; display: block; }
+.sb-explore { background: var(--sb-shirt, #222); }
+
+/* text looks and font picker */
+.sb-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.sb-look { min-height: 58px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--sb-shirt, var(--white)); color: var(--sb-on-shirt, var(--ink)); font-size: 1.15rem; line-height: 1.1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-look:hover, .sb-font:hover { border-color: var(--navy); }
+.sb-fontbtn { flex: 1; min-height: 44px; padding: 8px 12px; text-align: left; font-size: 1.2rem; border: 1px solid var(--line); border-radius: 12px; background: var(--white); color: var(--ink); cursor: pointer; }
+.sb-fontpick:empty { display: none; }
+.sb-fontpick { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--sand); }
+.sb-fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; max-height: 340px; overflow-y: auto; padding: 2px; }
+.sb-font { display: grid; gap: 2px; min-height: 64px; padding: 8px; text-align: left; border: 1.5px solid var(--line); border-radius: 10px; background: var(--white); color: var(--ink); font-size: 1.3rem; line-height: 1.1; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sb-font small { font: 500 .72rem var(--sans); color: var(--muted); }
+.sb-font[aria-checked="true"] { border-color: var(--navy); box-shadow: 0 0 0 2px color-mix(in srgb, var(--navy) 30%, transparent); }
+
+/* image styles */
+.sb-fx { display: grid; gap: 8px; }
+.sb-fx > .sb-pill { justify-self: start; }
+.sb-fx-body { display: grid; gap: 8px; padding: 4px 0 6px 12px; border-left: 2px solid var(--line); }
+
+/* layers */
+.sb-layers { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.sb-layers li { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--white); }
+.sb-layers li.sel { border-color: var(--navy); }
+.sb-layers li.off .sb-lthumb, .sb-layers li.off .sb-lpick span { opacity: .45; }
+.sb-lpick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 2px 6px 2px 2px; border: 0; background: none; color: var(--ink); font: 600 .92rem var(--sans); text-align: left; cursor: pointer; }
+.sb-lpick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-lthumb { flex: none; width: 44px; height: 44px; border-radius: 8px; background: var(--sb-shirt, var(--shell)); }
+.sb-iconbtn { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid transparent; border-radius: 10px; background: none; color: var(--muted); cursor: pointer; }
+.sb-iconbtn:hover { color: var(--ink); border-color: var(--line); }
+.sb-iconbtn[aria-pressed="true"] { color: var(--navy); }
+@media (max-width: 480px) { .sb-iconbtn { width: 36px; } }
+
+/* ideas and saved designs */
+.sb-ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.sb-idea { display: grid; gap: 6px; padding: 6px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--white); color: var(--ink); font: 600 .88rem var(--sans); cursor: pointer; }
+.sb-idea:hover { border-color: var(--navy); }
+.sb-idea img { width: 100%; aspect-ratio: 3 / 4; border-radius: 8px; background: var(--sb-shirt, var(--shell)); }
+.sb-saved { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 6px; }
+.sb-saved li { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 12px; }
+.sb-saved img { width: 48px; height: auto; border-radius: 6px; }
+.sb-saved span { flex: 1; min-width: 0; font-weight: 600; font-size: .92rem; }
+.sb-share { margin-top: 12px; }
+
+/* drawing */
+.sb-area.is-drawing { cursor: crosshair; outline-color: var(--brass); }
+.sb-area.is-drawing .sb-layer { cursor: crosshair; }
+.sb-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }

@@ -40,3 +40,13 @@ Test: `node --test tests/*.test.mjs`
 3. The Business Console must allow `https://epix3d.com` and `https://www.epix3d.com` (built in from
    Business-console PR "Allow epix3d.com", or the Worker variable `BUILDER_ORIGINS`), or the art library won't load.
 4. Optional repository variable `STORE_URL` (default `https://elevatedshirts.com`).
+
+## Design tools
+
+- **Ideas**: 22 starter designs in different styles (`templates.js`), recolored to suit the shirt.
+- **Text**: 87 self-hosted fonts in 12 style groups (`fonts/`, all OFL or Apache), one-tap looks, gradient, two outlines, hard shadow, arc, circle, wave and rise shapes.
+- **Art**: 1,433 clip art pieces (`art/icons.json`, Phosphor Icons, MIT), 32 badge shapes (`design.js`), the pattern maker (`geometry.js`) and the console library.
+- **Upload**: background removal, halftone cleanup, DTF prep, plus styles: halftone dots, distressed, sticker outline, drop shadow, two-tone, stencil, posterize, pixel art and shape cut (`imaging.js`).
+- **Draw**, **Layers** (hide, lock, reorder), align buttons, Ctrl+D copy, saved designs and autosave in the browser (`store.js`), mockup download and share.
+
+Every effect prints solid (no see-through pixels), so it holds up on DTF. `node --test tests/*.test.mjs` runs the checks.
