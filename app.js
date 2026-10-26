@@ -372,6 +372,7 @@ async function start(cfg) {
       const node = h("div", { class: `sb-layer${l.id === S.sel ? " sel" : ""}${l.locked ? " locked" : ""}`, "data-id": l.id, title: l.name });
       node.style.cssText = at(l);
       if (l.id === S.sel && !l.locked) node.append(h("span", { class: "sb-h-scale", "data-handle": "scale", "aria-hidden": "true" }), h("span", { class: "sb-h-rot", "data-handle": "rot", "aria-hidden": "true" }));
+      if (l.id === S.sel) node.append(h("button", { type: "button", class: "sb-h-del", "data-handle": "del", "aria-label": `Remove ${l.name} from the shirt`, title: "Remove from shirt" }));
       hits.push(node);
     }
     put(printBox, ...inkEls);
@@ -401,6 +402,7 @@ async function start(cfg) {
     if (!node) { if (S.sel) { S.sel = null; drawStage(); if (!panels.Layers.hidden) drawLayers(); } return; }
     const l = layers().find((x) => x.id === node.dataset.id);
     if (!l) return;
+    if (e.target.dataset.handle === "del") { e.preventDefault(); e.stopPropagation(); removeLayer(l); return; }
     if (S.sel !== l.id) { S.sel = l.id; drawStage(); if (!panels.Edit.hidden) drawEdit(); if (!panels.Layers.hidden) drawLayers(); }
     // double-click or double-tap text on the shirt to type in it
     const now = performance.now();
@@ -572,13 +574,45 @@ async function start(cfg) {
   }
 
   // ---------- library (the console's public art) ----------
-  const lib = { items: [], q: "", cat: "", kind: "", shown: 60, loaded: false, error: "" };
+  const lib = { items: [], q: "", cat: "", kind: "", loaded: false, error: "" };
   // Art this app features first (by category or tag). "All categories" still shows everything.
   const focusWords = (cfg.libraryFocus ?? []).map((w) => String(w).toLowerCase().trim()).filter(Boolean);
   const FOCUS = "__focus";
   const isFocus = (i) => focusWords.some((w) => String(i.category ?? "").toLowerCase() === w ||
     String(i.tags ?? "").toLowerCase().split(/[,;]\s*|\s+/).includes(w));
+  // customer collections: a code (typed under Designs, or a ?u=code link from a QR) shows only that customer's art.
+  // collections/<code>.json lists their files. It is a convenience code, not a password.
+  const coll = { code: "", name: "", open: false, error: "" };
+  const COLL_KEY = "sb-collection";
+  const cleanCode = (c) => String(c ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
+  const storeCode = (c) => { try { if (c) localStorage.setItem(COLL_KEY, c); else localStorage.removeItem(COLL_KEY); } catch { /* private window */ } };
+  const startCode = (() => {
+    const q = new URLSearchParams(location.search), fromLink = cleanCode(q.get("u") ?? q.get("code"));
+    if (fromLink) return fromLink;
+    try { return cleanCode(localStorage.getItem(COLL_KEY)); } catch { return ""; }
+  })();
+  async function openCollection(code) {
+    code = cleanCode(code);
+    if (!code) return false;
+    try {
+      const res = await fetch(here(`${cfg.collectionsUrl || "collections/"}${code}.json`), { headers: { accept: "application/json" } });
+      if (!res.ok) return false;
+      const c = await res.json(), dir = new URL(`${cfg.collectionsUrl || "collections/"}`, import.meta.url);
+      lib.items = (c.items ?? []).map((i) => ({ ...i, key: i.file, kind: i.kind || "png", url: new URL(i.file, dir).href }));
+      Object.assign(coll, { code, name: c.name || code, open: false, error: "" });
+      Object.assign(lib, { q: "", cat: "", kind: "", error: "", loaded: true });
+      storeCode(code);
+      return true;
+    } catch { return false; }
+  }
   async function loadLibrary() {
+    if (startCode && await openCollection(startCode)) return;
+    if (startCode) storeCode("");
+    await loadPublicLibrary();
+  }
+  async function loadPublicLibrary() {
+    Object.assign(coll, { code: "", name: "" });
+    Object.assign(lib, { items: [], q: "", cat: "", kind: "", error: "" });
     if (!libBase) { lib.error = "The art library isn't connected yet."; lib.loaded = true; return; }
     try {
       const res = await fetch(`${libBase}/api/images?public=1`, { headers: { accept: "application/json" }, mode: "cors" });
@@ -588,7 +622,7 @@ async function start(cfg) {
     } catch { lib.error = "Your designs couldn't load. Check your connection and refresh, or upload your own art."; }
     lib.loaded = true;
   }
-  const libUrl = (i) => `${libBase}/api/images/${encodeURIComponent(i.key)}`;
+  const libUrl = (i) => i.url ?? `${libBase}/api/images/${encodeURIComponent(i.key)}`;
   // imported art can carry a raw file id as its name; never show that to a customer
   const artName = (i) => { const n = String(i.name ?? "").replace(/\.(png|svg|jpe?g|webp)$/i, "").trim(); return !n || /^kittl[-_]|^[a-z0-9_-]{16,}$/i.test(n) ? "your design" : n; };
   function drawLibrary(p) {
@@ -599,21 +633,20 @@ async function start(cfg) {
     const list = lib.items.filter((i) => (!lib.cat || (lib.cat === FOCUS ? isFocus(i) : i.category === lib.cat)) && (!lib.kind || kindOf(i) === lib.kind) &&
       (!q || q.split(/\s+/).every((w) => `${i.name ?? ""} ${i.tags ?? ""} ${i.category ?? ""}`.toLowerCase().includes(w))));
     const search = h("input", { class: "field", type: "search", placeholder: cfg.librarySearchHint || "Search art, e.g. anchor, pineapple, Christmas", value: lib.q, "aria-label": "Search art" });
-    search.addEventListener("input", debounce(() => { lib.q = search.value; lib.shown = 60; drawLibrary(p); p.querySelector("input[type=search]")?.focus(); }, 250));
+    search.addEventListener("input", debounce(() => { lib.q = search.value; drawLibrary(p); p.querySelector("input[type=search]")?.focus(); }, 250));
     const sel = (label, val, opts, on) => h("select", { class: "field", "aria-label": label, onchange: (e) => on(e.target.value) },
       h("option", { value: "" }, label), opts.map(([v, t]) => h("option", { value: v, selected: v === val }, t)));
     put(p,
       lib.error ? h("p", { class: "sb-note" }, lib.error) : null,
       lib.items.length ? h("div", { class: "sb-filters" }, search,
-        sel("All categories", lib.cat, [...(lib.items.some(isFocus) ? [[FOCUS, cfg.libraryFocusLabel || "Featured"]] : []), ...cats.map((c) => [c, c])], (v) => { lib.cat = v; lib.shown = 60; drawLibrary(p); }),
-        sel("All types", lib.kind, [["svg", "SVG"], ["png", "PNG"], ["dtf", "DTF-ready"]], (v) => { lib.kind = v; lib.shown = 60; drawLibrary(p); })) : null,
+        sel("All categories", lib.cat, [...(lib.items.some(isFocus) ? [[FOCUS, cfg.libraryFocusLabel || "Featured"]] : []), ...cats.map((c) => [c, c])], (v) => { lib.cat = v; drawLibrary(p); }),
+        sel("All types", lib.kind, [["svg", "SVG"], ["png", "PNG"], ["dtf", "DTF-ready"]], (v) => { lib.kind = v; drawLibrary(p); })) : null,
       lib.items.length ? h("p", { class: "muted small" }, `${list.length} designs`) : null,
-      h("div", { class: "sb-lib", role: "list" }, list.slice(0, lib.shown).map((i) =>
+      h("div", { class: "sb-lib", role: "list" }, list.map((i) =>
         h("button", { type: "button", role: "listitem", class: "sb-tile", title: `${artName(i)}${i.tags ? ` · ${i.tags}` : ""}`,
           onclick: () => addFromLibrary(i) },
           h("img", { src: libUrl(i), alt: artName(i), loading: "lazy", decoding: "async", crossorigin: "anonymous" }),
           kindOf(i) === "dtf" ? h("span", { class: "sb-badge" }, "DTF") : null))),
-      list.length > lib.shown ? h("button", { type: "button", class: "btn ghost full", onclick: () => { lib.shown += 60; drawLibrary(p); } }, "Show more") : null,
     );
   }
   async function addFromLibrary(i) {
@@ -648,7 +681,25 @@ async function start(cfg) {
   // the art library (the console's designs) has its own tool
   const libBody = h("div", { class: "sb-artbody" });
   function drawLibraryTab() {
-    put(panels.Library, h("h2", { class: "sb-h" }, cfg.libraryLabel || "Your designs"), libBody);
+    const codeIn = h("input", { class: "field", type: "text", placeholder: "Your code", autocomplete: "off", autocapitalize: "none", spellcheck: false, "aria-label": "Customer code" });
+    const signIn = async (e) => {
+      e.preventDefault();
+      if (!cleanCode(codeIn.value)) { coll.error = "Type your code first."; drawLibraryTab(); return; }
+      put(libBody, h("p", { class: "muted" }, "Opening your designs…"));
+      if (await openCollection(codeIn.value)) say(`Showing ${coll.name} designs.`, "ok");
+      else coll.error = "We couldn't find that code. Check the spelling and try again.";
+      drawLibraryTab();
+    };
+    const signOut = async () => { storeCode(""); try { const u = new URL(location.href); u.searchParams.delete("u"); u.searchParams.delete("code"); history.replaceState(null, "", u); } catch { /* keep the URL */ } put(libBody, h("p", { class: "muted" }, "Loading art…")); await loadPublicLibrary(); drawLibraryTab(); };
+    const head = h("div", { class: "sb-libhead" },
+      h("h2", { class: "sb-h" }, coll.code ? `${coll.name} designs` : cfg.libraryLabel || "Your designs"),
+      coll.code ? h("button", { type: "button", class: "btn ghost small", onclick: signOut }, "Sign out")
+        : coll.open ? null : h("button", { type: "button", class: "btn ghost small", onclick: () => { coll.open = true; drawLibraryTab(); panels.Library.querySelector(".sb-codeform input")?.focus(); } }, "Have a code?"));
+    const form = !coll.code && coll.open ? h("form", { class: "sb-codeform", onsubmit: signIn },
+      h("label", { class: "small muted" }, "Enter the code you were given to see your designs."),
+      h("div", { class: "sb-coderow" }, codeIn, h("button", { type: "submit", class: "btn small" }, "Open")),
+      coll.error ? h("p", { class: "sb-note", role: "alert" }, coll.error) : null) : null;
+    put(panels.Library, head, form, libBody);
     drawLibrary(libBody);
   }
   function drawClipArt() {
@@ -1025,7 +1076,7 @@ async function start(cfg) {
         btn("Duplicate", () => duplicate(l)),
         btn(l.locked ? "Unlock" : "Lock", () => apply(() => { l.locked = !l.locked; drawEdit(); })),
         btn("Delete", () => removeLayer(l), "danger")));
-    put(p, h("h2", { class: "sb-h" }, `Edit: ${l.name}`), l.type === "text" ? textControls(l) : l.type === "vec" ? vecControls(l) : imageControls(l), common);
+    put(p, h("div", { class: "sb-edit-head" }, h("h2", { class: "sb-h" }, `Edit: ${l.name}`), h("button", { type: "button", class: "btn small danger sb-remove", onclick: () => removeLayer(l) }, ...icon("Delete"), "Remove")), l.type === "text" ? textControls(l) : l.type === "vec" ? vecControls(l) : imageControls(l), common);
   }
 
   // shared fill / gradient / outline / shadow controls for text and vector art
@@ -1290,6 +1341,7 @@ async function start(cfg) {
         fd.append("properties[_Art used]", used.join("; ").slice(0, 500));
         fd.append("properties[_Shirt color hex]", hexFor(S.color));
         if (qrSource) fd.append("properties[_QR source]", qrSource);
+        if (coll.code) fd.append("properties[_Collection]", coll.code);
         if (crossSite) { dirty = false; say("Taking you to the cart…", "ok"); return handoff(`${store}/cart/add`, fd); }
         const res = await fetch(cfg.cartAddUrl, { method: "POST", body: fd, headers: { accept: "application/json" } });
         if (!res.ok) {
@@ -1457,7 +1509,7 @@ async function start(cfg) {
   commit();
   loadFont(textFont);
   drawLibraryTab();
-  loadLibrary().then(() => drawLibraryTab());
+  loadLibrary().then(() => { drawLibraryTab(); if (coll.code) showTab("Library"); });
   offerDraft();
 }
 

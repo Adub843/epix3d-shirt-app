@@ -301,3 +301,19 @@ code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; background: v
 }
 @media (max-width: 900px) { .sb-bar { grid-template-columns: auto minmax(0, 1fr) auto; } .sb-bar-c { min-width: 0; } .sb-seg small { display: none; } }
 @media (max-width: 400px) { .sb-oprice { display: none; } }
+
+/* remove control: an x on the selected art's top-right corner, and a Remove button at the top of Edit */
+.sb-h-del { position: absolute; right: -11px; top: -11px; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1.5px solid var(--danger); background: var(--white); box-shadow: 0 1px 3px rgba(0,0,0,.25); cursor: pointer; touch-action: none; }
+.sb-h-del::before, .sb-h-del::after { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 1.75px; background: var(--danger); border-radius: 1px; transform: translate(-50%, -50%) rotate(45deg); }
+.sb-h-del::after { transform: translate(-50%, -50%) rotate(-45deg); }
+@media (pointer: coarse) { .sb-h-del { width: 28px; height: 28px; right: -14px; top: -14px; } .sb-h-del::before, .sb-h-del::after { width: 12px; } }
+.sb-edit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sb-edit-head .sb-h { min-width: 0; overflow-wrap: anywhere; }
+.sb .btn.sb-remove { flex: none; gap: 6px; background: var(--white); border-color: var(--danger); color: var(--danger); }
+.sb .btn.sb-remove:hover { background: #fbeeed; }
+.sb-remove svg { width: 16px; height: 16px; }
+.sb-libhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.sb-libhead .sb-h { margin: 0; }
+.sb-codeform { display: grid; gap: 8px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--sand); }
+.sb-coderow { display: flex; gap: 8px; }
+.sb-coderow .field { flex: 1; min-width: 0; }
