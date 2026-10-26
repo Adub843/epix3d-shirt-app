@@ -589,6 +589,8 @@ async function start(cfg) {
     lib.loaded = true;
   }
   const libUrl = (i) => `${libBase}/api/images/${encodeURIComponent(i.key)}`;
+  // imported art can carry a raw file id as its name; never show that to a customer
+  const artName = (i) => { const n = String(i.name ?? "").replace(/\.(png|svg|jpe?g|webp)$/i, "").trim(); return !n || /^kittl[-_]|^[a-z0-9_-]{16,}$/i.test(n) ? "your design" : n; };
   function drawLibrary(p) {
     if (!lib.loaded) { put(p, h("p", { class: "muted" }, "Loading art…")); return; }
     if (!lib.items.length && !lib.error) { put(p, h("p", { class: "muted" }, "New designs are on the way. In the meantime, add text or shapes", geo ? ", make a pattern" : "", " or upload your own art.")); return; }
@@ -607,9 +609,9 @@ async function start(cfg) {
         sel("All types", lib.kind, [["svg", "SVG"], ["png", "PNG"], ["dtf", "DTF-ready"]], (v) => { lib.kind = v; lib.shown = 60; drawLibrary(p); })) : null,
       lib.items.length ? h("p", { class: "muted small" }, `${list.length} designs`) : null,
       h("div", { class: "sb-lib", role: "list" }, list.slice(0, lib.shown).map((i) =>
-        h("button", { type: "button", role: "listitem", class: "sb-tile", title: `${i.name ?? "Design"}${i.tags ? ` · ${i.tags}` : ""}`,
+        h("button", { type: "button", role: "listitem", class: "sb-tile", title: `${artName(i)}${i.tags ? ` · ${i.tags}` : ""}`,
           onclick: () => addFromLibrary(i) },
-          h("img", { src: libUrl(i), alt: i.name ?? "Design", loading: "lazy", decoding: "async", crossorigin: "anonymous" }),
+          h("img", { src: libUrl(i), alt: artName(i), loading: "lazy", decoding: "async", crossorigin: "anonymous" }),
           kindOf(i) === "dtf" ? h("span", { class: "sb-badge" }, "DTF") : null))),
       list.length > lib.shown ? h("button", { type: "button", class: "btn ghost full", onclick: () => { lib.shown += 60; drawLibrary(p); } }, "Show more") : null,
     );
@@ -619,8 +621,8 @@ async function start(cfg) {
       const res = await fetch(libUrl(i), { mode: "cors" });
       if (!res.ok) throw new Error("That design couldn't load.");
       const blobIn = await res.blob();
-      const id = await addSource(blobIn, i.name ?? "Library art", "library", null);
-      addImageLayer(id, i.name ?? "Library art");
+      const id = await addSource(blobIn, artName(i), "library", null);
+      addImageLayer(id, artName(i));
     }).catch((e) => say(e.message, "err"));
   }
 
