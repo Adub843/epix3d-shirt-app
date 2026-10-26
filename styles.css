@@ -1,5 +1,5 @@
 /* EPIX3D shirt builder. Same builder as the Elevated Designs app (design.elevatedshirts.com), in a dark
-   urban/geometric skin: concrete black, lime, hot pink and cyan. Base styles first, then the builder, then the
+   fun, bold skin: concrete black, lime, hot pink and cyan. Base styles first, then the builder, then the
    EPIX3D layer at the end. The variable names come from the ED theme; here --navy is the lime accent. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("fonts/inter.woff2") format("woff2"); }
 :root {

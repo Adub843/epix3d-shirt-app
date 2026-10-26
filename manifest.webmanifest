@@ -1,7 +1,7 @@
 {
   "name": "EPIX3D shirt builder",
   "short_name": "EPIX3D",
-  "description": "Build an urban or geometric shirt and order it printed.",
+  "description": "Design your own shirt in any style and order it printed.",
   "start_url": "./?src=homescreen",
   "scope": "./",
   "display": "standalone",
