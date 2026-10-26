@@ -19,7 +19,7 @@ const ACCENTS = {
   mono: [["#ffffff", "#bdbdbd", "#ffffff"], ["#111111", "#555555", "#111111"]],
   chrome: [["#e0e7ff", "#7c8bff", "#ff6ad5"], ["#3b3fd1", "#8b5cf6", "#ff2e88"]],
 };
-export function colorsFor(shirtIsDark, accent = "neon") {
+export function colorsFor(shirtIsDark, accent = "varsity") {
   const [a, b, c] = ACCENTS[accent][shirtIsDark ? 0 : 1];
   return { ink: shirtIsDark ? "#ffffff" : "#111111", paper: shirtIsDark ? "#111111" : "#ffffff", a, b, c, dark: shirtIsDark };
 }
@@ -41,7 +41,7 @@ export const TEMPLATES = [
     ],
   },
   {
-    id: "street", name: "Street tag", accent: "neon",
+    id: "street", name: "Street tag", accent: "mono",
     build: (k) => [
       { t: "text", value: "NO RULES", font: "Sedgwick Ave Display", x: 6, y: 4.5, w: 11, color: k.a, outline: k.paper, outlineW: 4, outline2: k.b, outline2W: 3, warp: "rise", curve: -18 },
       { t: "icon", id: "crown", x: 9.6, y: 1.6, w: 2.6, fill: k.b },
@@ -81,14 +81,14 @@ export const TEMPLATES = [
     ],
   },
   {
-    id: "neon", name: "Neon sign", accent: "neon",
+    id: "neon", name: "Neon sign", accent: "mono",
     build: (k) => [
       { t: "text", value: "Open Late", font: "Monoton", x: 6, y: 4.2, w: 10.5, color: k.b },
       { t: "text", value: "all night long", font: "Satisfy", x: 6, y: 7.2, w: 6, color: k.c },
     ],
   },
   {
-    id: "skate", name: "Skate", accent: "neon",
+    id: "skate", name: "Skate", accent: "mono",
     build: (k) => [
       { t: "shape", id: "bolt", x: 6, y: 6, w: 6.5, fill: k.a, outline: k.paper, outlineW: 3 },
       { t: "text", value: "RIDE FAST", font: "Bangers", x: 6, y: 3.2, w: 10.5, color: k.ink, outline: k.paper, outlineW: 4, shadow: k.b, shadowX: 5, shadowY: 5 },
@@ -96,7 +96,7 @@ export const TEMPLATES = [
     ],
   },
   {
-    id: "geo", name: "Geometric", accent: "neon", needs: "pattern",
+    id: "geo", name: "Geometric", accent: "mono", needs: "pattern",
     build: (k) => [
       { t: "pattern", style: "hex", palette: k.dark ? "neon" : "street", shape: "shield", density: 7, seed: 777, x: 6, y: 6, w: 8 },
       { t: "text", value: "BUILT DIFFERENT", font: "Unbounded", x: 6, y: 11.6, w: 9, color: k.ink, spacing: 6 },
@@ -165,7 +165,7 @@ export const TEMPLATES = [
     ],
   },
   {
-    id: "arcade", name: "Arcade", accent: "neon",
+    id: "arcade", name: "Arcade", accent: "mono",
     build: (k) => [
       { t: "text", value: "GAME ON", font: "Press Start 2P", x: 6, y: 3, w: 10, color: k.a, shadow: k.b, shadowX: 5, shadowY: 5 },
       { t: "icon", id: "alien", x: 6, y: 7, w: 4, fill: k.c },
@@ -173,7 +173,7 @@ export const TEMPLATES = [
     ],
   },
   {
-    id: "pocket", name: "Pocket hit", accent: "neon", needs: "pattern",
+    id: "pocket", name: "Pocket hit", accent: "mono", needs: "pattern",
     build: (k) => [
       { t: "pattern", style: "truchet", palette: k.dark ? "neon" : "street", shape: "circle", density: 6, seed: 2026, x: 9, y: 2.6, w: 3.2 },
       { t: "text", value: "ORIGINAL", font: "Space Grotesk", x: 9, y: 4.8, w: 2.8, color: k.ink, spacing: 20 },
